@@ -67,7 +67,7 @@
     (recipient principal)
   )
   (let ((id (make-next-id)))
-    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (try! (stx-transfer? amount tx-sender current-contract))
     (map-insert offers-map id {
       txid: txid,
       index: index,
@@ -180,12 +180,15 @@
     (input-index uint)
     (offer-id uint)
   )
-  (let ((offer (try! (validate-offer-transfer block prev-blocks tx proof input-index output-index
-      offer-id
-    ))))
-    (try! (as-contract (stx-transfer? (get amount offer) (as-contract tx-sender)
-      (get recipient offer)
-    )))
+  (let (
+      (offer (try! (validate-offer-transfer block prev-blocks tx proof input-index
+        output-index offer-id
+      )))
+      (amount (get amount offer))
+    )
+    (try! (as-contract? ((with-stx amount))
+      (try! (stx-transfer? amount current-contract (get recipient offer)))
+    ))
     (asserts! (map-insert offers-accepted-map offer-id true) ERR_OFFER_ACCEPTED)
     (print {
       topic: "offer-finalized",
@@ -221,11 +224,14 @@
 (define-public (refund-cancelled-offer (id uint))
   (let (
       (offer (unwrap! (map-get? offers-map id) ERR_INVALID_OFFER))
+      (amount (get amount offer))
       (cancelled (unwrap! (map-get? offers-cancelled-map id) ERR_INVALID_OFFER))
     )
     (asserts! (> burn-block-height cancelled) ERR_INVALID_OFFER)
     (asserts! (map-insert offers-refunded-map id true) ERR_INVALID_OFFER)
-    (try! (as-contract (stx-transfer? (get amount offer) (as-contract tx-sender) (get sender offer))))
+    (try! (as-contract? ((with-stx amount))
+      (try! (stx-transfer? amount current-contract (get sender offer)))
+    ))
     (print {
       topic: "offer-refunded",
       offer: (merge offer { id: id }),
